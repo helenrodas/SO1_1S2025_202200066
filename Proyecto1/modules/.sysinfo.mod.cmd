@@ -1,0 +1,1 @@
+savedcmd_/home/helen/Programacion/PracticasRust/SeptimoSemestre/Proyecto1/modules/sysinfo.mod := printf '%s\n'   sysinfo.o | awk '!x[$$0]++ { print("/home/helen/Programacion/PracticasRust/SeptimoSemestre/Proyecto1/modules/"$$0) }' > /home/helen/Programacion/PracticasRust/SeptimoSemestre/Proyecto1/modules/sysinfo.mod

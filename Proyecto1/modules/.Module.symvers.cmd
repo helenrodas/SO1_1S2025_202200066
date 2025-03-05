@@ -1,0 +1,1 @@
+savedcmd_/home/helen/Programacion/PracticasRust/SeptimoSemestre/Proyecto1/modules/Module.symvers :=  scripts/mod/modpost -M  -a    -N  -o /home/helen/Programacion/PracticasRust/SeptimoSemestre/Proyecto1/modules/Module.symvers -n -T /home/helen/Programacion/PracticasRust/SeptimoSemestre/Proyecto1/modules/modules.order -i Module.symvers -e 

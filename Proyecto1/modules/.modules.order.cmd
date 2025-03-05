@@ -1,0 +1,1 @@
+savedcmd_/home/helen/Programacion/PracticasRust/SeptimoSemestre/Proyecto1/modules/modules.order := {   echo /home/helen/Programacion/PracticasRust/SeptimoSemestre/Proyecto1/modules/sysinfo.o; :; } > /home/helen/Programacion/PracticasRust/SeptimoSemestre/Proyecto1/modules/modules.order
