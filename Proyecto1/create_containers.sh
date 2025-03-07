@@ -11,8 +11,10 @@ IMAGE="containerstack/alpine-stress:latest"
 TYPES=("ram" "cpu" "io" "disk")
 
 # Crear 10 contenedores aleatorios
-for i in $(seq 1 10); do
+for i in $(seq 1 3); do
     TYPE=${TYPES[$((RANDOM % 4))]}
+    #TYPE="ram"
+
 
     # Nombre único basado en fecha y random (para evitar colisiones)
     CONTAINER_NAME="${TYPE}_$(date +%s)_$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 6)"
