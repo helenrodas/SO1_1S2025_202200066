@@ -22,7 +22,18 @@ MODULE_VERSION("1.0");
 #define MAX_CMDLINE_LENGTH 256
 #define CONTAINER_ID_LENGTH 64
 
-// Obtener la ruta del cgroup de manera simplificada
+static unsigned long total_memory_kb = 0;
+
+// Estructura para rastrear contenedores
+struct container_info {
+    char *container_id;
+    char *cgroup_path;
+    unsigned long long total_rss_kb;   // Suma de RSS de todos los procesos
+    unsigned long total_cgroup_mem_kb; // Suma de memoria del cgroup
+    struct list_head list;
+};
+
+// Obtener la ruta del cgroup
 static char* get_task_cgroup_path(struct task_struct *task) {
     char *path;
     struct kernfs_node *kn = NULL;
@@ -32,19 +43,14 @@ static char* get_task_cgroup_path(struct task_struct *task) {
     if (!path)
         return NULL;
 
-    // Inicializar con la ruta base
     strncpy(path, "/sys/fs/cgroup", PATH_MAX - 1);
     path[PATH_MAX - 1] = '\0';
 
-    // En versiones recientes del kernel, la obtención de la ruta del cgroup
-    // es más complicada. Simplificamos para detectar procesos de contenedores
-    // buscando "docker" en la ruta de cgroup del proceso
     if (task->cgroups && task->cgroups->dfl_cgrp) {
         cgroup = task->cgroups->dfl_cgrp;
         if (cgroup && cgroup->kn) {
             kn = cgroup->kn;
             if (kn && kn->name) {
-                // Intentamos construir una ruta más descriptiva
                 strlcat(path, "/", PATH_MAX);
                 strlcat(path, kn->name, PATH_MAX);
             }
@@ -54,71 +60,81 @@ static char* get_task_cgroup_path(struct task_struct *task) {
     return path;
 }
 
-// Nueva versión modificada para obtener el uso de memoria
+// Extraer el ID del contenedor de la ruta del cgroup
+static char* get_container_id(const char *cgroup_path) {
+    char *id = NULL;
+    char *docker_ptr = NULL;
+
+    if (!cgroup_path)
+        return NULL;
+
+    docker_ptr = strstr(cgroup_path, "docker-");
+    if (docker_ptr) {
+        char *id_start = docker_ptr + strlen("docker-");
+        char *id_end = strstr(id_start, ".scope");
+        size_t id_len = id_end ? (id_end - id_start) : strlen(id_start);
+
+        if (id_len > 0) {
+            id = kmalloc(id_len + 1, GFP_KERNEL);
+            if (id) {
+                strncpy(id, id_start, id_len);
+                id[id_len] = '\0';
+            }
+        }
+    }
+
+    return id ? id : kstrdup("unknown", GFP_KERNEL);
+}
+
+// Obtener el uso de memoria del cgroup
 static unsigned long retrieve_task_mem_usage(struct task_struct *task) {
     char *cgroup_base_path = NULL;
     char *memory_file = NULL;
     struct file *file_handle = NULL;
-    char data_buf[64];  // Buffer más grande por seguridad
+    char data_buf[64];
     unsigned long mem_value = 0;
     loff_t file_pos = 0;
     ssize_t read_result;
 
-    // Obtener la ruta base del cgroup
     cgroup_base_path = get_task_cgroup_path(task);
-    if (!cgroup_base_path) {
-        printk(KERN_ERR "No se pudo obtener la ruta base del cgroup\n");
+    if (!cgroup_base_path)
         return 0;
-    }
 
-    // Asignar memoria dinámica para la ruta del archivo
     memory_file = kmalloc(PATH_MAX, GFP_KERNEL);
     if (!memory_file) {
-        printk(KERN_ERR "Fallo al asignar memoria para la ruta del archivo\n");
         kfree(cgroup_base_path);
         return 0;
     }
 
-    // Construir la ruta completa - intenta primero con memory.current (cgroup v2)
     snprintf(memory_file, PATH_MAX, "%s/memory.current", cgroup_base_path);
-    
-    // Abrir el archivo
     file_handle = filp_open(memory_file, O_RDONLY, 0);
     if (IS_ERR(file_handle)) {
-        // Si falla, intenta con memory.usage_in_bytes (cgroup v1)
         snprintf(memory_file, PATH_MAX, "%s/memory.usage_in_bytes", cgroup_base_path);
         file_handle = filp_open(memory_file, O_RDONLY, 0);
     }
 
     if (IS_ERR(file_handle)) {
-        printk(KERN_ERR "Error abriendo archivo de memoria: %ld\n", PTR_ERR(file_handle));
         kfree(memory_file);
         kfree(cgroup_base_path);
         return 0;
     }
 
-    // Leer el contenido del archivo
     read_result = kernel_read(file_handle, data_buf, sizeof(data_buf) - 1, &file_pos);
     if (read_result > 0) {
         data_buf[read_result] = '\0';
-        if (kstrtoul(data_buf, 10, &mem_value) < 0) {  // Verificación más estricta
-            printk(KERN_ERR "Error al convertir el valor de memoria\n");
+        if (kstrtoul(data_buf, 10, &mem_value) < 0) {
             mem_value = 0;
         }
-    } else {
-        printk(KERN_ERR "Fallo al leer archivo de memoria: %ld\n", read_result);
     }
 
-    // Liberar recursos
     filp_close(file_handle, NULL);
     kfree(memory_file);
     kfree(cgroup_base_path);
 
-    return mem_value;  // Devuelve el uso de memoria en bytes
+    return mem_value; // En bytes
 }
 
-static unsigned long total_memory_kb = 0;
-
+// Obtener información de memoria del sistema
 static void get_memory_info(struct seq_file *m) {
     struct sysinfo info;
 
@@ -135,41 +151,82 @@ static void get_memory_info(struct seq_file *m) {
     seq_puts(m, "},\n");
 }
 
+// Mostrar procesos de contenedores agrupados por container_id
 static void get_container_processes(struct seq_file *m) {
     struct task_struct *task;
-    int first = 1;
+    LIST_HEAD(containers); // Lista para almacenar información de contenedores
 
-    seq_puts(m, "\"container_processes\": [\n");
-
+    // Primera pasada: recolectar y agrupar datos
     for_each_process(task) {
         if (strstr(task->comm, "stress") || strstr(task->comm, "docker-")) {
             char *cgroup_path = get_task_cgroup_path(task);
+            char *container_id = get_container_id(cgroup_path);
             unsigned long mem_usage_bytes = retrieve_task_mem_usage(task);
-            unsigned long mem_usage_kb = mem_usage_bytes / 1024;  // Convertir a KB
+            unsigned long mem_usage_kb = mem_usage_bytes / 1024;
+            unsigned long rss_kb = task->mm ? get_mm_rss(task->mm) * 4 : 0;
 
-            if (!first) {
-                seq_puts(m, ",\n");
+            struct container_info *container = NULL;
+            struct container_info *tmp;
+
+            // Buscar si el contenedor ya está en la lista
+            list_for_each_entry(tmp, &containers, list) {
+                if (strcmp(tmp->container_id, container_id) == 0) {
+                    container = tmp;
+                    break;
+                }
             }
-            first = 0;
 
-            unsigned long rss_kb = 0;
-            if (task->mm) {
-                rss_kb = get_mm_rss(task->mm) * 4;  // 4KB por página
-            }
-            
-            unsigned long long usage_percentage = total_memory_kb ? (rss_kb * 10000ULL) / total_memory_kb : 0;
-
-            seq_printf(m, "    {\"pid\": %d, \"name\": \"%s\", \"memory_usage\": %llu.%02llu%%, \"cgroup_path\": \"%s\", \"cgroup_mem_usage_kb\": %lu}",
-                       task->pid, 
-                       task->comm,
-                       usage_percentage / 100, 
-                       usage_percentage % 100,
-                       cgroup_path ? cgroup_path : "unknown",
-                       mem_usage_kb);
-
-            if (cgroup_path)
+            if (!container) {
+                // Nuevo contenedor, crear entrada
+                container = kmalloc(sizeof(*container), GFP_KERNEL);
+                if (!container) {
+                    kfree(cgroup_path);
+                    kfree(container_id);
+                    continue;
+                }
+                container->container_id = container_id;
+                container->cgroup_path = cgroup_path;
+                container->total_rss_kb = 0;
+                container->total_cgroup_mem_kb = 0;
+                INIT_LIST_HEAD(&container->list);
+                list_add(&container->list, &containers);
+            } else {
+                // Contenedor existente, liberar recursos no necesarios
                 kfree(cgroup_path);
+                kfree(container_id);
+            }
+
+            // Acumular métricas
+            container->total_rss_kb += rss_kb;
+            container->total_cgroup_mem_kb += mem_usage_kb;
         }
+    }
+
+    // Segunda pasada: generar JSON
+    int first = 1;
+    seq_puts(m, "\"container_processes\": [\n");
+
+    struct container_info *container, *tmp;
+    list_for_each_entry_safe(container, tmp, &containers, list) {
+        if (!first) {
+            seq_puts(m, ",\n");
+        }
+        first = 0;
+
+        unsigned long long usage_percentage = total_memory_kb ? (container->total_rss_kb * 10000ULL) / total_memory_kb : 0;
+
+        seq_printf(m, "    {\"container_id\": \"%s\", \"cgroup_path\": \"%s\", \"memory_usage\": %llu.%02llu%%, \"cgroup_mem_usage_kb\": %lu}",
+                   container->container_id,
+                   container->cgroup_path ? container->cgroup_path : "unknown",
+                   usage_percentage / 100,
+                   usage_percentage % 100,
+                   container->total_cgroup_mem_kb);
+
+        // Liberar recursos
+        kfree(container->container_id);
+        kfree(container->cgroup_path);
+        list_del(&container->list);
+        kfree(container);
     }
 
     seq_puts(m, "\n]\n");
