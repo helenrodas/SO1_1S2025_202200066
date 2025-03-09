@@ -1154,6 +1154,9 @@ deps_/home/helen/Programacion/sopes/SO1_1S2025_202200066/Proyecto1/modules/sysin
   include/asm-generic/sections.h \
     $(wildcard include/config/HAVE_FUNCTION_DESCRIPTORS) \
   include/linux/cgroup_refcnt.h \
+  include/linux/delay.h \
+  arch/x86/include/asm/delay.h \
+  include/asm-generic/delay.h \
 
 /home/helen/Programacion/sopes/SO1_1S2025_202200066/Proyecto1/modules/sysinfo.o: $(deps_/home/helen/Programacion/sopes/SO1_1S2025_202200066/Proyecto1/modules/sysinfo.o)
 
