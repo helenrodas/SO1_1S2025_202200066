@@ -12,9 +12,9 @@
 #include <linux/cgroup-defs.h>
 #include <linux/cgroup.h>
 #include <linux/kernfs.h>
-#include <linux/kernel_stat.h> // Para kernel_cpustat
-#include <linux/delay.h>      // Para msleep
-#include <linux/jiffies.h>    // Para jiffies
+#include <linux/kernel_stat.h>
+#include <linux/delay.h>
+#include <linux/jiffies.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Helen Rodas");
@@ -27,11 +27,9 @@ MODULE_VERSION("1.0");
 
 static unsigned long total_memory_kb = 0;
 
-// Variables para el cálculo del CPU del sistema
 static u64 prev_cpu_idle_time = 0;
 static u64 prev_cpu_total_time = 0;
 
-// Variables para el cálculo del CPU por contenedor
 #define MAX_CONTAINERS 10
 static u64 prev_container_cpu_usage[MAX_CONTAINERS] = {0};
 static u64 last_update_time = 0;
@@ -41,11 +39,12 @@ struct container_info {
     char *cgroup_path;
     unsigned long long total_rss_kb;
     unsigned long long disk_usage_kb;
-    unsigned long long cpu_usage_percent; // Nuevo campo para el porcentaje de CPU
+    unsigned long long cpu_usage_percent;
+    unsigned long long io_read_ops;  // Nuevo campo para operaciones de lectura
+    unsigned long long io_write_ops; // Nuevo campo para operaciones de escritura
     struct list_head list;
 };
 
-// Funciones existentes
 static char* get_task_cgroup_path(struct task_struct *task) {
     char *path;
     struct cgroup *cgroup;
@@ -100,15 +99,17 @@ static char* get_container_id(const char *cgroup_path) {
     return id ? id : kstrdup("unknown", GFP_KERNEL);
 }
 
-static void get_container_disk_io(const char *cgroup_path, unsigned long long *disk_usage_kb) {
+static void get_container_disk_io(const char *cgroup_path, unsigned long long *disk_usage_kb, unsigned long long *io_read_ops, unsigned long long *io_write_ops) {
     char *io_path;
     struct file *file;
     char *buffer;
     ssize_t bytes_read;
     loff_t pos = 0;
-    unsigned long long rbytes = 0, wbytes = 0;
+    unsigned long long rbytes = 0, wbytes = 0, rios = 0, wios = 0;
 
     *disk_usage_kb = 0;
+    *io_read_ops = 0;
+    *io_write_ops = 0;
 
     io_path = kmalloc(PATH_MAX, GFP_KERNEL);
     if (!io_path)
@@ -141,10 +142,12 @@ static void get_container_disk_io(const char *cgroup_path, unsigned long long *d
                 next_line++;
             }
             if (strstr(line, "rbytes=")) {
-                sscanf(line, "%*s rbytes=%llu wbytes=%llu", &rbytes, &wbytes);
+                sscanf(line, "%*s rbytes=%llu wbytes=%llu rios=%llu wios=%llu", &rbytes, &wbytes, &rios, &wios);
                 if (rbytes || wbytes) {
                     *disk_usage_kb += (rbytes + wbytes) / 1024;
                 }
+                *io_read_ops += rios;
+                *io_write_ops += wios;
             }
             line = next_line;
         }
@@ -155,7 +158,6 @@ static void get_container_disk_io(const char *cgroup_path, unsigned long long *d
     kfree(io_path);
 }
 
-// Nueva función para el uso total de CPU del sistema
 static unsigned int get_system_cpu_usage(void) {
     u64 cpu_idle_time = 0, cpu_total_time = 0;
     u64 delta_idle, delta_total;
@@ -185,11 +187,10 @@ static unsigned int get_system_cpu_usage(void) {
 
     prev_cpu_idle_time = cpu_idle_time;
     prev_cpu_total_time = cpu_total_time;
-    msleep(500); // Pequeña pausa para obtener una medición significativa
+    msleep(500);
     return cpu_usage;
 }
 
-// Nueva función para el uso de CPU por contenedor
 static u64 get_container_cpu_usage(const char *cgroup_path, int index) {
     char *cpu_path;
     struct file *file;
@@ -246,7 +247,7 @@ static u64 get_container_cpu_usage(const char *cgroup_path, int index) {
         delta_time = jiffies_to_usecs(current_time - last_update_time);
         delta_usage = usage_usec - prev_container_cpu_usage[index];
         if (delta_time > 0) {
-            cpu_percentage = (delta_usage * 10000) / delta_time; // Multiplicado por 10000 para mantener precisión
+            cpu_percentage = (delta_usage * 10000) / delta_time;
         }
     }
 
@@ -303,7 +304,9 @@ static void get_container_processes(struct seq_file *m) {
                 }
 
                 unsigned long long disk_usage_kb = 0;
-                get_container_disk_io(cgroup_path, &disk_usage_kb);
+                unsigned long long io_read_ops = 0;
+                unsigned long long io_write_ops = 0;
+                get_container_disk_io(cgroup_path, &disk_usage_kb, &io_read_ops, &io_write_ops);
                 u64 cpu_usage = get_container_cpu_usage(cgroup_path, container_index);
 
                 container = kmalloc(sizeof(*container), GFP_KERNEL);
@@ -317,6 +320,8 @@ static void get_container_processes(struct seq_file *m) {
                 container->total_rss_kb = 0;
                 container->disk_usage_kb = disk_usage_kb;
                 container->cpu_usage_percent = cpu_usage;
+                container->io_read_ops = io_read_ops;
+                container->io_write_ops = io_write_ops;
                 INIT_LIST_HEAD(&container->list);
                 list_add(&container->list, &containers);
                 container_index++;
@@ -341,12 +346,14 @@ static void get_container_processes(struct seq_file *m) {
 
         unsigned long long mem_usage_percentage = total_memory_kb ? (container->total_rss_kb * 10000ULL) / total_memory_kb : 0;
 
-        seq_printf(m, "    {\"container_id\": \"%s\", \"cgroup_path\": \"%s\", \"memory_usage\": %llu.%02llu%%, \"disk_usage_kb\": %llu, \"cpu_usage\": %llu.%02llu%%}",
+        seq_printf(m, "    {\"container_id\": \"%s\", \"cgroup_path\": \"%s\", \"memory_usage\": %llu.%02llu%%, \"disk_usage_kb\": %llu, \"cpu_usage\": %llu.%02llu%%, \"io_read_ops\": %llu, \"io_write_ops\": %llu}",
                    container->container_id,
                    container->cgroup_path ? container->cgroup_path : "unknown",
                    mem_usage_percentage / 100, mem_usage_percentage % 100,
                    container->disk_usage_kb,
-                   container->cpu_usage_percent / 100, container->cpu_usage_percent % 100);
+                   container->cpu_usage_percent / 100, container->cpu_usage_percent % 100,
+                   container->io_read_ops,
+                   container->io_write_ops);
 
         kfree(container->container_id);
         kfree(container->cgroup_path);
@@ -355,7 +362,7 @@ static void get_container_processes(struct seq_file *m) {
     }
 
     seq_puts(m, "\n]\n");
-    last_update_time = get_jiffies_64(); // Actualizar el tiempo después de medir
+    last_update_time = get_jiffies_64();
 }
 
 static int sysinfo_show(struct seq_file *m, void *v) {
@@ -380,8 +387,8 @@ static const struct proc_ops sysinfo_ops = {
 static int __init inicio(void) {
     proc_create(PROCFS_NAME, 0, NULL, &sysinfo_ops);
     printk(KERN_INFO "sysinfo_202200066 cargado correctamente.\n");
-    prev_cpu_total_time = get_jiffies_64(); // Inicializar tiempo total
-    last_update_time = get_jiffies_64();    // Inicializar tiempo para contenedores
+    prev_cpu_total_time = get_jiffies_64();
+    last_update_time = get_jiffies_64();
     return 0;
 }
 
@@ -392,3 +399,5 @@ static void __exit fin(void) {
 
 module_init(inicio);
 module_exit(fin);
+
+//No esta mal esta version, cuestion de ajuste pero es aceptable
