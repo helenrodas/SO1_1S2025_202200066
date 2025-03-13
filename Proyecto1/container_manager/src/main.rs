@@ -1,9 +1,10 @@
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::fs::{self, File};
+use std::io::{Write, Read};
 use std::process::Command;
 use std::time::Duration;
 use std::thread;
-use reqwest::blocking::Client;
+use chrono::Utc;
 use ctrlc;
 use std::collections::HashMap;
 
@@ -32,12 +33,17 @@ struct SysInfo {
     container_processes: Vec<Container>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)] // Añadimos Deserialize para leer el JSON existente
 struct LogEntry {
     container_id: String,
     category: String,
     created_at: String,
     deleted_at: Option<String>,
+    memory_usage: String,
+    disk_usage_kb: u64,
+    cpu_usage: String,
+    io_read_ops: u64,
+    io_write_ops: u64,
 }
 
 fn get_container_names() -> HashMap<String, String> {
@@ -57,8 +63,7 @@ fn get_container_names() -> HashMap<String, String> {
 }
 
 fn main() {
-    let log_url = "http://localhost:8080/logs";
-    let client = Client::new();
+    let log_file_path = "/home/helen/Programacion/sopes/SO1_1S2025_202200066/Proyecto1/logs.json";
 
     let running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
     let r = running.clone();
@@ -78,6 +83,12 @@ fn main() {
         sysinfo.memory.total_memory, sysinfo.memory.free_memory, 
         sysinfo.memory.used_memory, sysinfo.memory.cpu_usage_percent);
 
+    // Sobreescribir el archivo logs.json al inicio de cargo run con una lista vacía
+    let mut logs: Vec<LogEntry> = Vec::new();
+    let json_content = serde_json::to_string_pretty(&logs).expect("Failed to serialize initial logs");
+    let mut file = File::create(log_file_path).expect("Failed to create logs.json");
+    file.write_all(json_content.as_bytes()).expect("Failed to write initial logs.json");
+
     while running.load(std::sync::atomic::Ordering::SeqCst) {
         let name_map = get_container_names();
 
@@ -85,25 +96,42 @@ fn main() {
         for container in &sysinfo.container_processes {
             let short_id = if container.container_id.len() >= 12 { &container.container_id[..12] } else { &container.container_id };
             let name = name_map.get(short_id).unwrap_or(&container.container_id).to_string();
+            let category = name.get(..3).unwrap_or("unknown").to_string();
 
             println!("- {} (Memoria: {}, CPU: {}, Disco: {} KB, I/O Lectura: {}, I/O Escritura: {})", 
                 name, container.memory_usage, container.cpu_usage, container.disk_usage_kb, container.io_read_ops, container.io_write_ops);
+
+            // Crear nueva entrada de log
+            let new_entry = LogEntry {
+                container_id: name.clone(),
+                category,
+                created_at: Utc::now().to_rfc3339(),
+                deleted_at: None,
+                memory_usage: container.memory_usage.clone(),
+                disk_usage_kb: container.disk_usage_kb,
+                cpu_usage: container.cpu_usage.clone(),
+                io_read_ops: container.io_read_ops,
+                io_write_ops: container.io_write_ops,
+            };
+
+            // Leer el contenido existente de logs.json
+            let mut existing_logs: Vec<LogEntry> = match fs::read_to_string(log_file_path) {
+                Ok(content) => serde_json::from_str(&content).unwrap_or_else(|_| Vec::new()),
+                Err(_) => Vec::new(), // Si el archivo no existe o está vacío, empezar con una lista vacía
+            };
+
+            // Añadir la nueva entrada
+            existing_logs.push(new_entry);
+
+            // Escribir el contenido actualizado en logs.json
+            let json_content = serde_json::to_string_pretty(&existing_logs).expect("Failed to serialize logs");
+            let mut file = File::create(log_file_path).expect("Failed to update logs.json");
+            file.write_all(json_content.as_bytes()).expect("Failed to write to logs.json");
         }
 
+        println!("Logs guardados en {}", log_file_path);
         thread::sleep(Duration::from_secs(10));
     }
-
-    println!("Finalizando servicio...");
-    if let Err(e) = client.post(format!("{}/generate_graphs", log_url)).send() {
-        println!("Error generando gráficas: {}", e);
-    } else {
-        println!("Gráficas generadas");
-    }
-
-    Command::new("crontab")
-        .arg("-r")
-        .output()
-        .expect("Failed to remove crontab");
 
     println!("Servicio detenido.");
 }
