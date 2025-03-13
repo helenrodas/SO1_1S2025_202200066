@@ -1,1 +1,0 @@
-savedcmd_/home/helen/Programacion/sopes/SO1_1S2025_202200066/Proyecto1/modules/sysinfo.mod := printf '%s\n'   sysinfo.o | awk '!x[$$0]++ { print("/home/helen/Programacion/sopes/SO1_1S2025_202200066/Proyecto1/modules/"$$0) }' > /home/helen/Programacion/sopes/SO1_1S2025_202200066/Proyecto1/modules/sysinfo.mod
