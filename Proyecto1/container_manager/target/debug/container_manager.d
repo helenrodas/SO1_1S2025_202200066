@@ -1,0 +1,1 @@
+/home/helen/Programacion/sopes/SO1_1S2025_202200066/Proyecto1/container_manager/target/debug/container_manager: /home/helen/Programacion/sopes/SO1_1S2025_202200066/Proyecto1/container_manager/src/main.rs

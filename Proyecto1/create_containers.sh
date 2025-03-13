@@ -1,44 +1,44 @@
 #!/bin/bash
 
-# Directorio de logs local (puede cambiar si quieres)
-LOG_DIR="./logs"
-mkdir -p "$LOG_DIR"
-
 # Imagen base
-IMAGE="containerstack/alpine-stress:latest"
+IMAGE="containerstack/alpine-stress"
 
-# Tipos de contenedores a generar (según las notas del proyecto)
+# Función para generar un nombre aleatorio
+generate_name() {
+    # Usamos timestamp + un número aleatorio de /dev/urandom
+    TIMESTAMP=$(date +%s)
+    RANDOM_SUFFIX=$(od -x /dev/urandom | head -1 | awk '{print $2$3}')
+    echo "${1}_${TIMESTAMP}_${RANDOM_SUFFIX}"
+}
+
+# Tipos de contenedores
 TYPES=("ram" "cpu" "io" "disk")
 
-# Crear 10 contenedores aleatorios
-for i in $(seq 1 3); do
-    TYPE=${TYPES[$((RANDOM % 4))]}
-    #TYPE="ram"
+# Crear 10 contenedores
+for ((i=1; i<=3; i++)); do
+    # Seleccionar tipo aleatorio
+    TYPE=${TYPES[$RANDOM % ${#TYPES[@]}]}
 
+    # Generar nombre único
+    CONTAINER_NAME=$(generate_name "$TYPE")
 
-    # Nombre único basado en fecha y random (para evitar colisiones)
-    CONTAINER_NAME="${TYPE}_$(date +%s)_$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 6)"
-
-    case "$TYPE" in
-        ram)
-            docker run -d --name "$CONTAINER_NAME" "$IMAGE" stress --vm 1 --vm-bytes 200M --vm-hang 0
+    # Configurar comando según el tipo
+    case $TYPE in
+        "ram")
+            CMD="stress --vm 1 --vm-bytes 200M --vm-keep"
             ;;
-        cpu)
-            docker run -d --name "$CONTAINER_NAME" "$IMAGE" stress --cpu-load 0.2
+        "cpu")
+            CMD="stress --cpu 1"
             ;;
-        io)
-            docker run -d --name "$CONTAINER_NAME" "$IMAGE" stress --io 1
+        "io")
+            CMD="stress --io 1"
             ;;
-        disk)
-            docker run -d --name "$CONTAINER_NAME" "$IMAGE" stress --hdd 1 --hdd-bytes 500M
+        "disk")
+            CMD="stress --hdd 1 --hdd-bytes 1G"
             ;;
     esac
 
-    if [ $? -eq 0 ]; then
-        echo "$(date) - Creado: $CONTAINER_NAME (Tipo: $TYPE)" >> "$LOG_DIR/containers.log"
-    else
-        echo "$(date) - Error al crear: $CONTAINER_NAME (Tipo: $TYPE)" >> "$LOG_DIR/containers.log"
-    fi
+    # Crear el contenedor
+    docker run -d --name "$CONTAINER_NAME" "$IMAGE" sh -c "$CMD" > /dev/null 2>&1
+    echo "Creado contenedor: $CONTAINER_NAME ($TYPE)"
 done
-
-echo "Contenedores creados correctamente. Revisa $LOG_DIR/containers.log para más detalles."

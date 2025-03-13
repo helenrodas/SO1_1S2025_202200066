@@ -346,7 +346,10 @@ static void get_container_processes(struct seq_file *m) {
 
         unsigned long long mem_usage_percentage = total_memory_kb ? (container->total_rss_kb * 10000ULL) / total_memory_kb : 0;
 
-        seq_printf(m, "    {\"container_id\": \"%s\", \"cgroup_path\": \"%s\", \"memory_usage\": %llu.%02llu%%, \"disk_usage_kb\": %llu, \"cpu_usage\": %llu.%02llu%%, \"io_read_ops\": %llu, \"io_write_ops\": %llu}",
+        // Modificación: Imprimir memory_usage y cpu_usage como cadenas con comillas
+        seq_printf(m, "    {\"container_id\": \"%s\", \"cgroup_path\": \"%s\", "
+                      "\"memory_usage\": \"%llu.%02llu%%\", \"disk_usage_kb\": %llu, "
+                      "\"cpu_usage\": \"%llu.%02llu%%\", \"io_read_ops\": %llu, \"io_write_ops\": %llu}",
                    container->container_id,
                    container->cgroup_path ? container->cgroup_path : "unknown",
                    mem_usage_percentage / 100, mem_usage_percentage % 100,
@@ -399,5 +402,3 @@ static void __exit fin(void) {
 
 module_init(inicio);
 module_exit(fin);
-
-//No esta mal esta version, cuestion de ajuste pero es aceptable
