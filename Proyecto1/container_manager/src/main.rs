@@ -3,7 +3,6 @@ use std::fs;
 use std::process::Command;
 use std::time::Duration;
 use std::thread;
-use chrono::Utc;
 use reqwest::blocking::Client;
 use ctrlc;
 use std::collections::HashMap;
@@ -60,7 +59,6 @@ fn get_container_names() -> HashMap<String, String> {
 fn main() {
     let log_url = "http://localhost:8080/logs";
     let client = Client::new();
-    let mut logs: Vec<LogEntry> = Vec::new();
 
     let running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
     let r = running.clone();
