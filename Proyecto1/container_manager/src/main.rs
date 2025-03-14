@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
-use std::io::{Write, Read};
+use std::io::{Write};
 use std::process::Command;
 use std::time::Duration;
 use std::thread;
@@ -84,7 +84,7 @@ fn main() {
         sysinfo.memory.used_memory, sysinfo.memory.cpu_usage_percent);
 
     // Sobreescribir el archivo logs.json al inicio de cargo run con una lista vacía
-    let mut logs: Vec<LogEntry> = Vec::new();
+    let  logs: Vec<LogEntry> = Vec::new();
     let json_content = serde_json::to_string_pretty(&logs).expect("Failed to serialize initial logs");
     let mut file = File::create(log_file_path).expect("Failed to create logs.json");
     file.write_all(json_content.as_bytes()).expect("Failed to write initial logs.json");
