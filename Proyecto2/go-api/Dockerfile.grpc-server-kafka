@@ -1,0 +1,11 @@
+FROM golang:1.22 AS builder
+WORKDIR /app
+COPY . .
+RUN apt-get update && apt-get install -y librdkafka-dev
+RUN go mod download
+RUN CGO_ENABLED=1 GOOS=linux go build -o grpc-server-kafka ./cmd/grpc-server-kafka
+
+FROM alpine:latest
+RUN apk add --no-cache librdkafka
+COPY --from=builder /app/grpc-server-kafka /grpc-server-kafka
+CMD ["/grpc-server-kafka"]

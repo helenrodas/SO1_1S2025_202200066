@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package tweet;
+
+option go_package = "tweets-clima/proto";
+
+service TweetService {
+  rpc PublishTweet (TweetRequest) returns (TweetResponse);
+}
+
+message TweetRequest {
+  string description = 1;
+  string country = 2;
+  string weather = 3;
+}
+
+message TweetResponse {
+  string message = 1;
+}

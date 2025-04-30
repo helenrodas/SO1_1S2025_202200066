@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grpc-server-kafka
+  namespace: tweets-clima
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grpc-server-kafka
+  template:
+    metadata:
+      labels:
+        app: grpc-server-kafka
+    spec:
+      containers:
+      - name: grpc-server-kafka
+        image: 34.172.134.232.nip.io/tweets-clima/grpc-server-kafka
+        resources:
+          requests:
+            cpu: "100m"
+          limits:
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grpc-server-kafka-service
+  namespace: tweets-clima
+spec:
+  selector:
+    app: grpc-server-kafka
+  ports:
+  - port: 9092
+    targetPort: 9092

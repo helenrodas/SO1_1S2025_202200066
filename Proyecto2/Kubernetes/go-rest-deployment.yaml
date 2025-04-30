@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-rest
+  namespace: tweets-clima
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: go-rest
+  template:
+    metadata:
+      labels:
+        app: go-rest
+    spec:
+      containers:
+      - name: go-rest
+        image: 34.172.134.232.nip.io/tweets-clima/go-rest:latest
+        ports:
+        - containerPort: 8080
+        resources:
+          limits:
+            cpu: 500m
+          requests:
+            cpu: 100m
