@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net"
+	"time"
 
 	pb "tweets-clima/proto"
 
@@ -53,24 +54,52 @@ func stringPtr(s string) *string {
 }
 
 func main() {
-	rabbitConn, err := amqp.Dial("amqp://guest:guest@rabbitmq:5672/")
-	if err != nil {
-		log.Fatalf("No se pudo conectar a RabbitMQ: %v", err)
+	var rabbitConn *amqp.Connection
+	var kafkaProducer *kafka.Producer
+	var err error
+
+	// Reintentar conexión a RabbitMQ
+	for {
+		rabbitConn, err = amqp.Dial("amqp://guest:guest@rabbitmq:5672/")
+		if err != nil {
+			log.Printf("No se pudo conectar a RabbitMQ, reintentando en 5s: %v", err)
+			time.Sleep(5 * time.Second)
+			continue
+		}
+		log.Println("Conectado a RabbitMQ")
+		break
 	}
 	defer rabbitConn.Close()
 
-	kafkaProducer, err := kafka.NewProducer(&kafka.ConfigMap{"bootstrap.servers": "kafka:9092"})
-	if err != nil {
-		log.Fatalf("No se pudo conectar a Kafka: %v", err)
+	// Reintentar conexión a Kafka
+	for {
+		kafkaProducer, err = kafka.NewProducer(&kafka.ConfigMap{"bootstrap.servers": "kafka:9092"})
+		if err != nil {
+			log.Printf("No se pudo conectar a Kafka, reintentando en 5s: %v", err)
+			time.Sleep(5 * time.Second)
+			continue
+		}
+		log.Println("Conectado a Kafka")
+		break
 	}
 	defer kafkaProducer.Close()
 
-	lis, err := net.Listen("tcp", ":50051")
-	if err != nil {
-		log.Fatalf("No se pudo escuchar en el puerto 50051: %v", err)
+	// Reintentar escuchar en el puerto 50051
+	var lis net.Listener
+	for {
+		lis, err = net.Listen("tcp", ":50051")
+		if err != nil {
+			log.Printf("No se pudo escuchar en el puerto 50051, reintentando en 5s: %v", err)
+			time.Sleep(5 * time.Second)
+			continue
+		}
+		log.Println("Escuchando en el puerto 50051")
+		break
 	}
 
+	// Iniciar servidor gRPC
 	s := grpc.NewServer()
 	pb.RegisterTweetServiceServer(s, &server{rabbitConn: rabbitConn, kafkaProducer: kafkaProducer})
+	log.Println("Iniciando servidor gRPC en :50051")
 	log.Fatal(s.Serve(lis))
 }

@@ -1,20 +1,12 @@
+# Etapa de construcción
 FROM golang:1.22 AS builder
 WORKDIR /app
 COPY . .
-# Instalar protoc y librdkafka
-RUN apt-get update && apt-get install -y protobuf-compiler librdkafka-dev
-# Instalar versiones específicas de protoc-gen-go y protoc-gen-go-grpc
-RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2
-RUN go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
-# Generar archivos proto
-RUN protoc --go_out=. --go-grpc_out=. proto/tweet.proto
-# Descargar dependencias y construir
 RUN go mod download
-RUN CGO_ENABLED=1 GOOS=linux go build -o grpc-client ./cmd/grpc-client
+RUN CGO_ENABLED=0 GOOS=linux go build -o go-rest ./cmd/rest-api
 
+# Etapa de ejecución
 FROM alpine:latest
-# Instalar librdkafka en la imagen final
-RUN apk add --no-cache librdkafka
-COPY --from=builder /app/grpc-client /grpc-client
-EXPOSE 50051
-CMD ["/grpc-client"]
+COPY --from=builder /app/go-rest /go-rest
+EXPOSE 8080
+CMD ["/go-rest"]

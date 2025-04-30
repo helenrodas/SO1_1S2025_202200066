@@ -1,4 +1,5 @@
-FROM golang:1.22 AS builder
+# Etapa única para construcción y ejecución
+FROM golang:1.22-bookworm
 WORKDIR /app
 COPY . .
 # Instalar protoc y librdkafka
@@ -11,10 +12,8 @@ RUN protoc --go_out=. --go-grpc_out=. proto/tweet.proto
 # Descargar dependencias y construir
 RUN go mod download
 RUN CGO_ENABLED=1 GOOS=linux go build -o grpc-client ./cmd/grpc-client
-
-FROM alpine:latest
-# Instalar librdkafka en la imagen final
-RUN apk add --no-cache librdkafka
-COPY --from=builder /app/grpc-client /grpc-client
+RUN chmod +x /app/grpc-client
+# Verificar que el binario está presente
+RUN ls -l /app/grpc-client
 EXPOSE 50051
-CMD ["/grpc-client"]
+CMD ["/app/grpc-client"]
