@@ -1,9 +1,23 @@
-FROM golang:1.22 AS builder
+# Etapa única para construcción y ejecución
+FROM golang:1.22-bookworm
 WORKDIR /app
-COPY . .
+# Copiar solo los archivos necesarios
+COPY go.mod go.sum ./
+COPY proto/ ./proto/
+COPY cmd/grpc-server-rabbit/ ./cmd/grpc-server-rabbit/
+# Depuración: listar el contenido de /app y /app/cmd/grpc-server-rabbit
+RUN ls -la /app
+RUN ls -la /app/cmd/grpc-server-rabbit
+# Instalar protoc
+RUN apt-get update && apt-get install -y protobuf-compiler
+# Instalar versiones específicas de protoc-gen-go y protoc-gen-go-grpc
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2
+RUN go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+# Generar archivos proto
+RUN protoc --go_out=. --go-grpc_out=. proto/tweet.proto
+# Descargar dependencias y construir
 RUN go mod download
-RUN CGO_ENABLED=0 GOOS=linux go build -o grpc-server-rabbit ./cmd/grpc-server-rabbit
-
-FROM alpine:latest
-COPY --from=builder /app/grpc-server-rabbit /grpc-server-rabbit
-CMD ["/grpc-server-rabbit"]
+RUN CGO_ENABLED=0 GOOS=linux go build -o grpc-server-rabbit ./cmd/grpc-server-rabbit/main.go
+RUN chmod +x /app/grpc-server-rabbit
+EXPOSE 50052
+CMD ["/app/grpc-server-rabbit"]

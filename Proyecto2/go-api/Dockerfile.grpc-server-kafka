@@ -1,11 +1,23 @@
-FROM golang:1.22 AS builder
+# Etapa única para construcción y ejecución
+FROM golang:1.22-bookworm
 WORKDIR /app
-COPY . .
-RUN apt-get update && apt-get install -y librdkafka-dev
+# Copiar solo los archivos necesarios
+COPY go.mod go.sum ./
+COPY proto/ ./proto/
+COPY cmd/grpc-server-kafka/ ./cmd/grpc-server-kafka/
+# Depuración: listar el contenido de /app y /app/cmd/grpc-server-kafka
+RUN ls -la /app
+RUN ls -la /app/cmd/grpc-server-kafka
+# Instalar protoc y librdkafka
+RUN apt-get update && apt-get install -y protobuf-compiler librdkafka-dev
+# Instalar versiones específicas de protoc-gen-go y protoc-gen-go-grpc
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2
+RUN go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+# Generar archivos proto
+RUN protoc --go_out=. --go-grpc_out=. proto/tweet.proto
+# Descargar dependencias y construir
 RUN go mod download
-RUN CGO_ENABLED=1 GOOS=linux go build -o grpc-server-kafka ./cmd/grpc-server-kafka
-
-FROM alpine:latest
-RUN apk add --no-cache librdkafka
-COPY --from=builder /app/grpc-server-kafka /grpc-server-kafka
-CMD ["/grpc-server-kafka"]
+RUN CGO_ENABLED=1 GOOS=linux go build -o grpc-server-kafka ./cmd/grpc-server-kafka/main.go
+RUN chmod +x /app/grpc-server-kafka
+EXPOSE 50053
+CMD ["/app/grpc-server-kafka"]

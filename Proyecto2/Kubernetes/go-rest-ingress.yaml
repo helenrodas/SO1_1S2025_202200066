@@ -1,0 +1,17 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: go-rest
+  namespace: tweets-clima
+spec:
+  rules:
+  - host: 34.67.99.104.nip.io
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: go-rest
+            port:
+              number: 80
