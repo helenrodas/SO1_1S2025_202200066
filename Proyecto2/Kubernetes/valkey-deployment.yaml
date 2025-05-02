@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: valkey
+  name: valkey-deployment
   namespace: tweets-clima
 spec:
   replicas: 1
@@ -15,28 +15,39 @@ spec:
     spec:
       containers:
       - name: valkey
-        image: valkey/valkey:latest
+        image: bitnami/valkey:latest
         ports:
         - containerPort: 6379
+        env:
+        - name: ALLOW_EMPTY_PASSWORD
+          value: "yes"
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "256Mi"
+          limits:
+            cpu: "200m"
+            memory: "512Mi"
         volumeMounts:
-        - name: valkey-storage
+        - name: valkey-data
           mountPath: /data
       volumes:
-      - name: valkey-storage
+      - name: valkey-data
         persistentVolumeClaim:
           claimName: valkey-pvc
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: valkey
+  name: valkey-service
   namespace: tweets-clima
 spec:
-  selector:
-    app: valkey
   ports:
   - port: 6379
     targetPort: 6379
+  selector:
+    app: valkey
+  clusterIP: None
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -45,7 +56,7 @@ metadata:
   namespace: tweets-clima
 spec:
   accessModes:
-    - ReadWriteOnce
+  - ReadWriteOnce
   resources:
     requests:
       storage: 1Gi

@@ -18,9 +18,7 @@ spec:
         image: 34.172.134.232.nip.io/tweets-clima/grpc-server-rabbit
         resources:
           requests:
-            cpu: "100m"
-          limits:
-            cpu: "500m"
+            cpu: "50m"
 ---
 apiVersion: v1
 kind: Service

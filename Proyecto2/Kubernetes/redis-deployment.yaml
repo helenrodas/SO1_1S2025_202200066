@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: redis
+  name: redis-deployment
   namespace: tweets-clima
 spec:
   replicas: 1
@@ -18,25 +18,30 @@ spec:
         image: redis:latest
         ports:
         - containerPort: 6379
+        resources:
+          requests:
+            cpu: "50m"    # 100 milicores
+            memory: "256Mi" # 256 MiB
         volumeMounts:
-        - name: redis-storage
+        - name: redis-data
           mountPath: /data
       volumes:
-      - name: redis-storage
+      - name: redis-data
         persistentVolumeClaim:
           claimName: redis-pvc
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: redis
+  name: redis-service
   namespace: tweets-clima
 spec:
-  selector:
-    app: redis
   ports:
   - port: 6379
     targetPort: 6379
+  selector:
+    app: redis
+  clusterIP: None
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -45,7 +50,7 @@ metadata:
   namespace: tweets-clima
 spec:
   accessModes:
-    - ReadWriteOnce
+  - ReadWriteOnce
   resources:
     requests:
       storage: 1Gi
