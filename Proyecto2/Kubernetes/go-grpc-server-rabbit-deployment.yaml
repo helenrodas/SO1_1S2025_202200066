@@ -31,5 +31,5 @@ spec:
   selector:
     app: grpc-server-rabbit
   ports:
-  - port: 5672
-    targetPort: 5672
+  - port: 50052
+    targetPort: 50052
