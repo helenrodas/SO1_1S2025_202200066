@@ -1,8 +1,14 @@
+
+
+
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: grafana
+  name: grafana-deployment
   namespace: tweets-clima
+  labels:
+    app: grafana
 spec:
   replicas: 1
   selector:
@@ -18,18 +24,32 @@ spec:
         image: grafana/grafana:latest
         ports:
         - containerPort: 3000
+          name: http
         env:
-        - name: GF_AUTH_ANONYMOUS_ENABLED
-          value: "true"
+        - name: GF_SECURITY_ADMIN_USER
+          value: "admin"
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          value: "admin123"
+        - name: GF_INSTALL_PLUGINS
+          value: "redis-datasource"  # Instala el plugin al iniciar el contenedor
+        resources:
+        volumeMounts:
+        - name: grafana-data
+          mountPath: /var/lib/grafana
+      volumes:
+      - name: grafana-data
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: grafana
+  name: grafana-service
   namespace: tweets-clima
 spec:
   selector:
     app: grafana
   ports:
-  - port: 3000
+  - port: 80
     targetPort: 3000
+    name: http
+  type: ClusterIP
