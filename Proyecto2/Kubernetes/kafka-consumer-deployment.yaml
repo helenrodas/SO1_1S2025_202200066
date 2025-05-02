@@ -15,6 +15,6 @@ spec:
     spec:
       containers:
       - name: kafka-consumer
-        image: 34.172.134.232.nip.io/tweets-clima/kafka-consumer
+        image: 34.172.134.232.nip.io/tweets-clima/kafka-consumer:latest
       imagePullSecrets:
       - name: harbor-secret

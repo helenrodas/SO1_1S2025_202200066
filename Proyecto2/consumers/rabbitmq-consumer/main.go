@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 
 	"github.com/streadway/amqp"
@@ -11,6 +12,19 @@ import (
 func failOnError(err error, msg string) {
 	if err != nil {
 		log.Fatalf("%s: %s", msg, err)
+	}
+}
+
+func incrCounterInValkey(addr, password, hashKey, field string, increment int64) {
+	client := redis.NewClient(&redis.Options{
+		Addr:     addr,
+		Password: password, // Vacío, no se usa contraseña
+		DB:       0,
+	})
+	defer client.Close()
+	err := client.HIncrBy(context.Background(), hashKey, field, increment).Err()
+	if err != nil {
+		log.Printf("Error incrementing counter in Valkey: %v", err)
 	}
 }
 
@@ -49,26 +63,17 @@ func main() {
 
 	log.Printf(" [*] Waiting for messages in queue 'message'. To exit press CTRL+C")
 	for msg := range msgs {
-		tweet := string(msg.Body)
-		// Extraer país del mensaje (asumiendo que está en el JSON como "country")
-		country := "Guatemala" // Ajusta esto según el parsing real del JSON
+		// Parsear el JSON del mensaje
+		var tweet map[string]string
+		err := json.Unmarshal(msg.Body, &tweet)
+		if err != nil {
+			log.Printf("Error parsing JSON: %v", err)
+			continue
+		}
+		country := tweet["country"] // Extraer el campo 'country' del JSON
 		// Incrementar contadores en Valkey
 		incrCounterInValkey("valkey-service.tweets-clima.svc.cluster.local:6379", "", "country_counts", country, 1)
 		incrCounterInValkey("valkey-service.tweets-clima.svc.cluster.local:6379", "", "message_total", "", 1)
-		log.Printf("Received a message: %s", tweet)
-	}
-}
-
-// Función para incrementar contadores en Valkey usando tablas hash
-func incrCounterInValkey(addr, password, hashKey, field string, increment int64) {
-	client := redis.NewClient(&redis.Options{
-		Addr:     addr,
-		Password: password, // Vacío, no se usa contraseña
-		DB:       0,
-	})
-	defer client.Close()
-	err := client.HIncrBy(context.Background(), hashKey, field, increment).Err()
-	if err != nil {
-		log.Printf("Error incrementing counter in Valkey: %v", err)
+		log.Printf("Received a message: %s", string(msg.Body))
 	}
 }
